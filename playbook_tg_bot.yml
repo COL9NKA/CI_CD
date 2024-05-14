@@ -1,0 +1,15 @@
+- name: Test
+  hosts: all    # playbook запустится для всех хостов в inventory.
+  become: yes   # команда позволяет ansible использовать права root.
+
+  tasks:        # ниже начинается список задач. Обратите внимание, tasks во множественном числе. Иначе получим ошибку при выполнении плейбука
+
+  - name: Ensure postgres DB is at the latest version
+    ansible.builtin.yum:
+      name: postgresql
+      state: latest
+
+  - name: Ensure that postgresql is started
+    ansible.builtin.service:
+      name: postgresql
+      state: started

@@ -1,0 +1,2 @@
+host01 ansible_host=192.168.0.66 ansible_user=ansible ansible_password=kali
+
