@@ -1,0 +1,193 @@
+- name: bd
+  hosts: bd
+  become: yes
+  handlers:
+  - name: restart postgresql
+    become: yes
+    service: name=postgresql state=restarted
+
+
+  vars:
+    postgresql_version: "14"
+    
+  tasks:
+  
+  - name: Update and upgrade apt packages
+    become: true
+    apt:
+      update_cache: yes
+
+  - name: Install PostgreSQL
+    become: yes
+    apt:
+      name: 
+        - "postgresql-{{postgresql_version}}"
+        - "postgresql-contrib-{{postgresql_version}}"
+      state: present
+      update_cache: yes
+       
+  - name: Install apt
+    become: yes
+    apt:
+      name:
+        - python3
+        - python3-pip
+        - libpq-dev
+      state: present
+      update_cache: yes
+      
+  - name: Install bottle python package
+    ansible.builtin.pip:
+      name: psycopg2
+      
+  - name: Configure PostgreSQL pg_hba
+    become: yes
+    template:
+      src: pg_hba.conf
+      dest: /etc/postgresql/{{postgresql_version}}/main/pg_hba.conf
+    notify: restart postgresql
+    
+  - name: Configure PostgreSQL config-postgresql
+    become: yes
+    template:
+      src: config-postgresql
+      dest: /etc/postgresql/{{postgresql_version}}/main/postgresql.conf
+    notify: restart postgresql
+      
+  - name: Create a directory
+    file:
+      path: /oracle/pg_data/archive
+      state: directory
+      mode: '0777'
+      
+  - name: Create replication user, set MD5-hashed password, grant privs
+    postgresql_user:
+      name: repl_user
+      password: "kali"
+      role_attr_flags: REPLICATION
+    become_user: postgres
+      
+  - name: Create db user
+    postgresql_user:
+      name: postgres
+      password: "Qq12345"
+    become_user: postgres
+    
+  - name: Create a new database
+    community.postgresql.postgresql_db:
+      name: db2
+    become_user: postgres
+    notify: restart postgresql
+
+  - name: Create tbl1
+    community.postgresql.postgresql_table:
+      db: db2
+      name: emails
+      columns:
+      - ID SERIAL PRIMARY KEY
+      - email VARCHAR(50) NOT NULL
+    become_user: postgres
+  - name: Create tbl2
+    community.postgresql.postgresql_table:
+      db: db2
+      name: phone_numbers
+      columns:
+      - ID SERIAL PRIMARY KEY
+      - phone_number VARCHAR(32) NOT NULL
+    become_user: postgres
+
+  - name: Insert1
+    postgresql_query:
+      db: db2
+      query: INSERT INTO emails (email) VALUES ('test@mail.ru'),('test1@mail.ru')
+    become_user: postgres
+  - name: Insert2
+    postgresql_query:
+      db: db2
+      query: INSERT INTO phone_numbers (phone_number) VALUES ('88005553535'),('+78005553535')
+    become_user: postgres
+ 
+
+- name: bd_repl
+  hosts: bd_repl
+  become: yes
+  handlers:
+  - name: restart postgresql
+    become: yes
+    service: name=postgresql state=restarted
+    
+  vars:
+    postgresql_version: "14"
+    master_host: 192.168.0.208
+    
+  tasks:
+  
+  - name: Update and upgrade apt packages
+    become: true
+    apt:
+      update_cache: yes
+
+  - name: Install PostgreSQL
+    become: yes
+    apt:
+      name: "postgresql-{{postgresql_version}}"
+      state: present
+      update_cache: yes
+      
+  - name: Stop database
+    systemd:
+      state: stopped
+      name: postgresql
+    
+  - name: Remove data
+    file:
+      state: absent
+      path: "/var/lib/pgsql/{{postgresql_version}}/data/"
+
+  - name: Initialize the slave database
+    shell: "pg_basebackup -D /var/lib/pgsql/{{postgresql_version}}/data -h {{ master_host }} -X stream -c fast -U repl_user -w -R"
+    environment:
+      PGPASSWORD: "kali"
+    
+  - name: Start database
+    systemd:
+      state: started
+      name: postgresql
+      
+- name: bot
+  hosts: bot
+  become: yes
+  
+  tasks:
+  
+  - name: Install apt
+    become: yes
+    apt:
+      name:
+        - python3
+        - python3-pip
+        - libpq-dev
+        - git
+      state: present
+      update_cache: yes
+      
+  - name: Clone a github repository
+    ansible.builtin.git:
+      repo: https://github.com/COL9NKA/CI_CD.git
+      dest: /usr/share/CI_CD
+      clone: yes
+      update: yes
+      version: docker
+
+  - name: Install specified python requirements
+    ansible.builtin.pip:
+      requirements: /usr/share/CI_CD/bot_image/requirements.txt
+      
+  - name: bot_env_copy
+    ansible.builtin.copy:
+      src: .env
+      dest: /usr/share/CI_CD/bot_image/.env
+      mode: '0777'
+      
+  - name: execute script
+    command: python3 /usr/share/CI_CD/bot_image/bot2.py
