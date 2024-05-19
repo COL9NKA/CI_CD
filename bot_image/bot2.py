@@ -1,5 +1,6 @@
 import logging
 import paramiko
+import logging
 import os
 import re
 from pathlib import Path
@@ -159,15 +160,29 @@ def findPasswordNumbers(update: Update, context):
         return ConversationHandler.END
 
 
-def set_apt_list_grep(update: Update, context):
-    update.message.reply_text('Введите название пакета')
-    return 'get_apt_list_grep'
+def set_apt_list_q(update: Update, context):    
+    update.message.reply_text('Введите:\n"1" - Вывод всех пакетов\n"2" - Поиск информации о пакете')
+    return 'get_apt_list_q'
+    
+def get_apt_list_q(update: Update, context):    
+    user_input = update.message.text
+    if user_input == "1":
+        update.message.reply_text(get_command('apt list --installed| head -n 50'))
+        return ConversationHandler.END
+    elif user_input == "2":
+        update.message.reply_text('Введите название пакета')
+        return 'get_apt_list_grep'
+    else:
+        return ConversationHandler.END
+    
 
 def get_apt_list_grep(update: Update, context):
     user_input = update.message.text
-    update.message.reply_text(get_command('apt list | grep '+user_input+' | head -n 10'))
+    update.message.reply_text(get_command('apt list --installed| grep '+user_input+' | head -n 10'))
     return ConversationHandler.END
 
+    
+    
 def get_command(command, hostname=rm_host, username=rm_user, password=rm_password, port=rm_port):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -179,8 +194,8 @@ def get_command(command, hostname=rm_host, username=rm_user, password=rm_passwor
         client.close()
         data = str(data).replace('\\n', '\n').replace('\\t', '\t')[2:-1]
         return(data)
-    except:
-        return("Ошибка подключения.")
+    except (Exception, Error) as error:
+        return("Ошибка подключения: " + str(error))
 
 def get_release(update: Update, context):
     update.message.reply_text(get_command('lsb_release -a'))
@@ -204,8 +219,6 @@ def get_ps(update: Update, context):
     update.message.reply_text(get_command('ps'))
 def get_ss(update: Update, context):
     update.message.reply_text(get_command('ss | head -n 20'))
-def get_apt_list(update: Update, context):
-    update.message.reply_text(get_command('apt list | head -n 20'))
 def get_services(update: Update, context):
     update.message.reply_text(get_command('service --status-all | grep +'))
 def get_repl_logs(update: Update, context):
@@ -216,10 +229,11 @@ def get_repl_logs(update: Update, context):
         filtered_files.sort(reverse=True)
         if filtered_files:
             with open('/var/log/postgresql/' + filtered_files[0], 'r') as file:
-                lines = [next(file) for _ in range(20)]
+                lines = file.readlines()
                 text = ""
                 for line in lines:
-                    text += line + "\n"
+                    if ("replica" in line.lower()):
+                        text += line
                 update.message.reply_text(text)
     except (Exception, Error) as error:
         update.message.reply_text("Ошибка: " + str(error))
@@ -308,12 +322,15 @@ def main():
 
     # Обработчик диалога
     convHandler_get_apt_list_grep = ConversationHandler(
-        entry_points=[CommandHandler('get_apt_list_grep', set_apt_list_grep)],
+        entry_points=[CommandHandler('get_apt_list', set_apt_list_q)],
         states={
+            'get_apt_list_q': [MessageHandler(Filters.text & ~Filters.command, get_apt_list_q)],
             'get_apt_list_grep': [MessageHandler(Filters.text & ~Filters.command, get_apt_list_grep)],
+            
         },
         fallbacks=[]
     )
+    
 
     # Регистрируем обработчики команд
     dp.add_handler(CommandHandler("start", start))
@@ -329,7 +346,6 @@ def main():
     dp.add_handler(CommandHandler("get_critical", get_critical))
     dp.add_handler(CommandHandler("get_ps", get_ps))
     dp.add_handler(CommandHandler("get_ss", get_ss))
-    dp.add_handler(CommandHandler("get_apt_list", get_apt_list))
     dp.add_handler(CommandHandler("get_services", get_services))
     dp.add_handler(CommandHandler("get_repl_logs", get_repl_logs))
     dp.add_handler(CommandHandler("get_emails", get_emails))
