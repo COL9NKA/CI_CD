@@ -39,6 +39,11 @@
   - name: Install bottle python package
     ansible.builtin.pip:
       name: psycopg2
+    
+  - name: Start database
+    systemd:
+      state: started
+      name: postgresql
       
   - name: Configure PostgreSQL pg_hba
     become: yes
@@ -118,7 +123,7 @@
     
   vars:
     postgresql_version: "14"
-    master_host: 192.168.0.208
+    master_host: "{{ hostvars['bd']['ansible_host'] }}"
     
   tasks:
   
@@ -142,10 +147,10 @@
   - name: Remove data
     file:
       state: absent
-      path: "/var/lib/pgsql/{{postgresql_version}}/data/"
+      path: /var/lib/postgresql/{{postgresql_version}}/main/
 
   - name: Initialize the slave database
-    shell: "pg_basebackup -D /var/lib/pgsql/{{postgresql_version}}/data -h {{ master_host }} -X stream -c fast -U repl_user -w -R"
+    command: pg_basebackup -R -h {{ master_host }} -U repl_user -D /var/lib/postgresql/{{postgresql_version}}/main/ -vP -w
     environment:
       PGPASSWORD: "kali"
     
