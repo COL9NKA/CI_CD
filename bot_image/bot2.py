@@ -224,16 +224,24 @@ def get_services(update: Update, context):
 def get_repl_logs(update: Update, context):
     try:
         files = os.listdir('/var/log/postgresql/')
-        pattern = re.compile(r'^postgresql-\d{4}-\d{2}-\d{2}_\d{6}\.log$')
-        filtered_files = [file for file in files if pattern.match(file)]
-        filtered_files.sort(reverse=True)
+        if (len([i for i in files]) == 1):
+            filtered_files = files
+        elif (len([i for i in files]) > 1):
+            pattern = re.compile(r'^postgresql-\d{4}-\d{2}-\d{2}_\d{6}\.log$')
+            filtered_files = [file for file in files if pattern.match(file)]
+            filtered_files.sort(reverse=True)
+        else:
+            update.message.reply_text("no logs")
+            return        
         if filtered_files:
             with open('/var/log/postgresql/' + filtered_files[0], 'r') as file:
                 lines = file.readlines()
                 text = ""
+                i=0
                 for line in lines:
-                    if ("replica" in line.lower()):
+                    if ("replica" in line.lower() and i<30):
                         text += line
+                        i=i+1
                 update.message.reply_text(text)
     except (Exception, Error) as error:
         update.message.reply_text("Ошибка: " + str(error))
